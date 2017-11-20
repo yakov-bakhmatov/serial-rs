@@ -7,6 +7,9 @@ use std::str;
 
 use libc::{c_int, c_char, size_t};
 
+#[cfg(target_os = "dragonfly")]
+use dfly::errno_location;
+
 pub fn last_os_error() -> core::Error {
     from_raw_os_error(errno())
 }
@@ -56,12 +59,6 @@ pub fn errno() -> i32 {
         unsafe {
             __errno()
         }
-    }
-
-    #[cfg(target_os = "dragonfly")]
-    unsafe fn errno_location() -> *const c_int {
-        extern { fn __dfly_error() -> *const c_int; }
-        __dfly_error()
     }
 
     #[cfg(target_os = "openbsd")]

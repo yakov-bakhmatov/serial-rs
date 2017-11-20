@@ -5,6 +5,9 @@ extern crate libc;
 extern crate termios;
 extern crate ioctl_rs as ioctl;
 
+#[cfg(target_os = "dragonfly")]
+extern crate errno_dragonfly as dfly;
+
 pub use tty::*;
 
 mod error;
