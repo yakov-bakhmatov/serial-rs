@@ -1,6 +1,7 @@
 use core;
 use error;
 
+use std::cmp;
 use std::ffi::OsStr;
 use std::io;
 use std::mem;
@@ -81,6 +82,30 @@ impl COMPort {
             _ => Ok(status & pin != 0),
         }
     }
+
+    fn read0(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut len: DWORD = 0;
+        match unsafe { ReadFile(self.handle, buf.as_mut_ptr() as *mut c_void, buf.len() as DWORD, &mut len, ptr::null_mut()) } {
+            0 => Err(io::Error::last_os_error()),
+            _ => {
+                if len != 0 {
+                    Ok(len as usize)
+                }
+                else {
+                    Err(io::Error::new(io::ErrorKind::TimedOut, "Operation timed out"))
+                }
+            }
+        }
+    }
+
+    fn get_readable_bytes_count(&mut self) -> io::Result<usize> {
+        let mut errors: DWORD = 0;
+        let mut comstat: COMSTAT = unsafe { mem::zeroed() };
+        match unsafe { ClearCommError(self.handle, &mut errors, &mut comstat) } {
+            0 => Err(io::Error::last_os_error()),
+            _ => Ok(comstat.cbInQue as usize)
+        }
+    }
 }
 
 impl Drop for COMPort {
@@ -101,18 +126,17 @@ impl AsRawHandle for COMPort {
 
 impl io::Read for COMPort {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let mut len: DWORD = 0;
-
-        match unsafe { ReadFile(self.handle, buf.as_mut_ptr() as *mut c_void, buf.len() as DWORD, &mut len, ptr::null_mut()) } {
-            0 => Err(io::Error::last_os_error()),
-            _ => {
-                if len != 0 {
-                    Ok(len as usize)
-                }
-                else {
-                    Err(io::Error::new(io::ErrorKind::TimedOut, "Operation timed out"))
-                }
-            }
+        if buf.len() > 0 {
+            // wait for the first byte
+            try!(self.read0(&mut buf[0..1]));
+            // read the rest of received bytes
+            let readable = try!(self.get_readable_bytes_count());
+            let buf_len = buf.len();
+            let len = try!(self.read0(&mut buf[1..cmp::min(readable + 1, buf_len)]));
+            Ok(len + 1)
+        }
+        else {
+            self.read0(buf)
         }
     }
 }
